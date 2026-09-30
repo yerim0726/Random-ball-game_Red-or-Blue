@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>랜덤 볼 추첨기</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; background: radial-gradient(circle at 50% 0%, #253962 0, #11192d 40%, #090d18 100%); color: #f6f8ff; }
+    main { width: min(680px, 100%); text-align: center; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.7rem, 5vw, 2.5rem); }
+    .hint { color: #bdc9e5; margin: 0 0 22px; }
+    .machine { position: relative; width: min(450px, 92vw); aspect-ratio: 1 / 1.05; margin: auto; overflow: hidden; border: 9px solid rgba(222, 245, 255, .7); border-radius: 46% 46% 42% 42%; background: radial-gradient(circle at 38% 23%, rgba(255,255,255,.48), rgba(137,213,255,.15) 32%, rgba(10,35,71,.55) 70%); box-shadow: inset 0 0 50px rgba(255,255,255,.25), 0 18px 48px rgba(0,0,0,.45); }
+    .machine::before { content: ""; position: absolute; inset: 12px; border: 2px solid rgba(255,255,255,.35); border-radius: inherit; pointer-events: none; }
+    .balls { position: absolute; inset: 0; }
+    .ball { position: absolute; width: clamp(42px, 10vw, 60px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: .82rem; color: rgba(255,255,255,.9); box-shadow: inset -7px -9px 12px rgba(0,0,0,.25), inset 7px 7px 11px rgba(255,255,255,.42), 0 5px 8px rgba(0,0,0,.35); }
+    .red { background: radial-gradient(circle at 32% 25%, #ffb4b4, #f12b36 43%, #a60717); }
+    .blue { background: radial-gradient(circle at 32% 25%, #b9e7ff, #2479ef 43%, #093c9c); }
+    .chute { width: 120px; height: 96px; margin: -6px auto 0; border: 7px solid rgba(222,245,255,.68); border-top: 0; border-radius: 0 0 56px 56px; background: linear-gradient(90deg, rgba(37,90,152,.5), rgba(204,247,255,.35), rgba(37,90,152,.5)); display: grid; place-items: end center; padding-bottom: 8px; }
+    #winner { opacity: 0; transform: translateY(-58px) scale(.45); transition: .55s cubic-bezier(.17,.84,.3,1.3); z-index: 2; }
+    #winner.show { opacity: 1; transform: translateY(0) scale(1); }
+    .controls { margin-top: 25px; }
+    button { border: 0; border-radius: 999px; padding: 15px 28px; font: inherit; font-weight: 800; font-size: 1rem; background: linear-gradient(135deg, #ffd363, #ff8c2c); color: #291400; cursor: pointer; box-shadow: 0 8px 18px rgba(0,0,0,.3); transition: transform .15s, filter .15s; }
+    button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.08); } button:disabled { cursor: wait; filter: saturate(.4); }
+    #result { min-height: 30px; margin: 15px 0 0; font-size: 1.1rem; font-weight: 700; }
+    .count { margin: 10px 0 0; color: #bdc9e5; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>랜덤 볼 추첨기</h1>
+    <p class="hint">빨간 공 6개 · 파란 공 6개</p>
+    <section class="machine" aria-label="공이 섞이는 투명한 추첨 통"><div class="balls" id="balls"></div></section>
+    <div class="chute"><div id="winner" class="ball" aria-live="polite"></div></div>
+    <div class="controls"><button id="draw" type="button">공 추첨하기</button><p id="result" aria-live="polite">버튼을 눌러 추첨을 시작하세요.</p><p class="count">매 추첨은 12개 공 중 하나를 동일한 확률로 선택합니다.</p></div>
+  </main>
+  <script>
+    const ballsEl = document.querySelector('#balls');
+    const drawButton = document.querySelector('#draw');
+    const winnerEl = document.querySelector('#winner');
+    const resultEl = document.querySelector('#result');
+    const colors = [...Array(6).fill('red'), ...Array(6).fill('blue')];
+    let animationFrame;
+    function shuffle(items) {
+      const mixed = [...items];
+      for (let i = mixed.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [mixed[i], mixed[j]] = [mixed[j], mixed[i]];
+      }
+      return mixed;
+    }
+    function placeBalls() {
+      ballsEl.innerHTML = '';
+      shuffle(colors).forEach((color, i) => {
+        const ball = document.createElement('div');
+        ball.className = `ball ${color}`;
+        ball.textContent = color === 'red' ? '빨강' : '파랑';
+        const pileSlots = [
+          [35, 55], [50, 55], [65, 55],
+          [20, 66], [35, 66], [50, 66], [65, 66],
+          [12, 77], [27, 77], [42, 77], [57, 77], [72, 77]
+        ];
+        const [left, top] = pileSlots[i];
+        ball.style.left = `${left + (Math.random() - .5) * 5}%`;
+        ball.style.top = `${top + (Math.random() - .5) * 3}%`;
+        ball.style.transform = `rotate(${Math.round(Math.random() * 30 - 15)}deg)`;
+        ball.style.zIndex = String(Math.round(top));
+        ballsEl.append(ball);
+      });
+    }
+    function startMixing() {
+      const bounds = ballsEl.getBoundingClientRect();
+      const movingBalls = [...ballsEl.children].map(el => {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 165 + Math.random() * 155;
+        return { el, x: el.offsetLeft, y: el.offsetTop, size: el.offsetWidth,
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+          rotation: 0, spin: (Math.random() < .5 ? -1 : 1) * (190 + Math.random() * 250) };
+      });
+      let previous = performance.now();
+      const move = now => {
+        const seconds = Math.min((now - previous) / 1000, .04);
+        previous = now;
+        movingBalls.forEach(ball => {
+          ball.x += ball.vx * seconds; ball.y += ball.vy * seconds;
+          const maxX = bounds.width - ball.size, maxY = bounds.height - ball.size;
+          if (ball.x < 0 || ball.x > maxX) { ball.x = Math.max(0, Math.min(maxX, ball.x)); ball.vx *= -1; ball.vy += (Math.random() - .5) * 70; }
+          if (ball.y < 0 || ball.y > maxY) { ball.y = Math.max(0, Math.min(maxY, ball.y)); ball.vy *= -1; ball.vx += (Math.random() - .5) * 70; }
+          ball.rotation += ball.spin * seconds;
+          ball.el.style.left = `${ball.x}px`; ball.el.style.top = `${ball.y}px`;
+          ball.el.style.transform = `rotate(${ball.rotation}deg)`;
+        });
+        animationFrame = requestAnimationFrame(move);
+      };
+      animationFrame = requestAnimationFrame(move);
+    }
+    function stopMixing() { cancelAnimationFrame(animationFrame); }
+    function draw() {
+      drawButton.disabled = true;
+      winnerEl.className = 'ball'; winnerEl.textContent = ''; winnerEl.classList.remove('show');
+      resultEl.textContent = '공들이 빠르게 섞이고 있어요…';
+      placeBalls(); startMixing();
+      window.setTimeout(() => {
+        const picked = colors[Math.floor(Math.random() * colors.length)];
+        winnerEl.className = `ball ${picked}`;
+        winnerEl.textContent = picked === 'red' ? '빨강' : '파랑';
+        requestAnimationFrame(() => winnerEl.classList.add('show'));
+        resultEl.textContent = `추첨 결과: ${picked === 'red' ? '🔴 빨간 공' : '🔵 파란 공'}!`;
+        window.setTimeout(() => { stopMixing(); drawButton.disabled = false; }, 450);
+      }, 3000);
+    }
+    placeBalls(); drawButton.addEventListener('click', draw);
+  </script>
+</body>
+</html>
